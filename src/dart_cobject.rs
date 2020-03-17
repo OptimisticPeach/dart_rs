@@ -1,6 +1,10 @@
 use dart_sys as ffi;
-use crate::dart_handle::Port;
+use crate::dart_handle::{Port, TypedData};
 use std::ffi::{CString, CStr};
+use std::any::Any;
+use std::marker::PhantomData;
+use std::os::raw::c_void;
+use std::ops::{Index, IndexMut};
 
 pub enum CObject {
     Null,
@@ -11,7 +15,7 @@ pub enum CObject {
     String(CString),
     SendPort(Sender),
     Array(Vec<Self>),
-    TypedData(NativeArray)
+    TypedData(TypedDataArray<dyn Any>)
 }
 
 impl CObject {
@@ -40,8 +44,8 @@ impl CObject {
                     .collect::<Vec<_>>();
                 CObject::Array(vec)
             },
-            TypedData => CObject::TypedData(NativeArray(value.as_typed_data)),
-            ExternalTypedData => unimplemented!("External Typed Data has yet to be implemented!"),
+            TypedData => CObject::TypedData(TypedDataArray::new(value.as_typed_data)),
+            ExternalTypedData => CObject::TypedData(TypedDataArray::new_external(value.as_external_typed_data)),
             Unsupported => panic!("Unsupported CObject!"),
             NumberOfTypes => unimplemented!("Number of Typed has yet to be implemented!"),
             Capability => unimplemented!("Capabilities within CObjects have yet to be implemented!"),
@@ -56,7 +60,12 @@ impl CObject {
             CObject::Int32(x) => ffi::Dart_CObject { type_: ffi::Dart_CObject_Type::Int32, value: Dart_CObjectValue { as_int32: x } },
             CObject::Int64(x) => ffi::Dart_CObject { type_: ffi::Dart_CObject_Type::Int64, value: Dart_CObjectValue { as_int64: x } },
             CObject::Double(x) => ffi::Dart_CObject { type_: ffi::Dart_CObject_Type::Double, value: Dart_CObjectValue { as_double: x } },
-            CObject::TypedData(NativeArray(x)) => ffi::Dart_CObject { type_: ffi::Dart_CObject_Type::TypedData, value: Dart_CObjectValue { as_typed_data: x } },
+            CObject::TypedData(x) => {
+                match x {
+                    TypedDataArray::WithoutFinalizer(x, _) => ffi::Dart_CObject { type_: ffi::Dart_CObject_Type::TypedData, value: Dart_CObjectValue { as_typed_data: x}},
+                    TypedDataArray::WithFinalizer(x) => ffi::Dart_CObject { type_: ffi::Dart_CObject_Type::ExternalTypedData, value: Dart_CObjectValue { as_external_typed_data: x } },
+                }
+            },
             CObject::SendPort(Sender(x)) => ffi::Dart_CObject { type_: ffi::Dart_CObject_Type::SendPort, value: Dart_CObjectValue { as_send_port: x } },
             CObject::Array(x) => {
                 let vec: Vec<Box<ffi::Dart_CObject>> = x
@@ -92,7 +101,18 @@ impl CObject {
             CObject::Int32(x) => ffi::Dart_CObject { type_: ffi::Dart_CObject_Type::Int32, value: Dart_CObjectValue { as_int32: *x } },
             CObject::Int64(x) => ffi::Dart_CObject { type_: ffi::Dart_CObject_Type::Int64, value: Dart_CObjectValue { as_int64: *x } },
             CObject::Double(x) => ffi::Dart_CObject { type_: ffi::Dart_CObject_Type::Double, value: Dart_CObjectValue { as_double: *x } },
-            CObject::TypedData(NativeArray(x)) => ffi::Dart_CObject { type_: ffi::Dart_CObject_Type::TypedData, value: Dart_CObjectValue { as_typed_data: *x } },
+            CObject::TypedData(x) => {
+                match x {
+                    TypedDataArray::WithoutFinalizer(x, _) => ffi::Dart_CObject {
+                        type_: ffi::Dart_CObject_Type::TypedData,
+                        value: Dart_CObjectValue { as_typed_data: *x }
+                    },
+                    TypedDataArray::WithFinalizer(x) => ffi::Dart_CObject {
+                        type_: ffi::Dart_CObject_Type::ExternalTypedData,
+                        value: Dart_CObjectValue { as_external_typed_data: *x }
+                    },
+                }
+            },
             CObject::SendPort(Sender(x)) => ffi::Dart_CObject { type_: ffi::Dart_CObject_Type::SendPort, value: Dart_CObjectValue { as_send_port: *x } },
             CObject::Array(x) => {
                 let vec: Vec<Box<ffi::Dart_CObject>> = x
@@ -152,5 +172,101 @@ impl<'a> CObjectLock<'a> {
 #[repr(transparent)]
 pub struct Sender(pub ffi::Dart_SendPort);
 
-#[repr(transparent)]
-pub struct NativeArray(pub ffi::Dart_TypedData);
+#[derive(Copy, Clone)]
+pub enum TypedDataArray<T: ?Sized> {
+    WithoutFinalizer(ffi::Dart_TypedData, PhantomData<T>),
+    WithFinalizer(ffi::Dart_ExternalTypedData),
+}
+
+impl TypedDataArray<dyn Any> {
+    pub unsafe fn new(arr: ffi::Dart_TypedData) -> Self {
+        TypedDataArray::WithoutFinalizer(arr, PhantomData)
+    }
+
+    pub unsafe fn new_external(arr: ffi::Dart_ExternalTypedData) -> Self {
+        TypedDataArray::WithFinalizer(arr)
+    }
+
+    pub fn cast<T: TypedData>(self) -> Option<TypedDataArray<T>> {
+        match self {
+            TypedDataArray::WithFinalizer(x) => {
+                if x.type_ == T::TYPE {
+                    Some(TypedDataArray::WithFinalizer(x))
+                } else {
+                    None
+                }
+            },
+            TypedDataArray::WithoutFinalizer(x, _) => {
+                if x.type_ == T::TYPE {
+                    Some(TypedDataArray::WithoutFinalizer(x, PhantomData))
+                } else {
+                    None
+                }
+            },
+        }
+    }
+}
+
+impl<T: TypedData> TypedDataArray<T> {
+    pub fn create(data: Vec<T>) -> Self {
+        let ptr = Box::leak(data.into_boxed_slice());
+        let len = ptr.len();
+        let ptr_ptr = Box::leak(Box::new(ptr as *mut [T]));
+
+        unsafe extern "C" fn free<T>(_isolate_callback_data: *mut c_void, _handle: ffi::Dart_WeakPersistentHandle, peer: *mut c_void) {
+            let ptr = peer as *mut *mut [T];
+            let boxed = Box::from_raw(*ptr);
+            drop(boxed);
+            let boxed_2 = Box::from_raw(ptr);
+            drop(boxed_2);
+        }
+
+        TypedDataArray::WithFinalizer(
+            ffi::Dart_ExternalTypedData {
+                type_: T::TYPE,
+                length: len as _,
+                data: ptr as *mut [T] as *mut T as *mut u8,
+                peer: ptr_ptr as *mut *mut [T] as *mut c_void,
+                callback: Some(free::<T>)
+            }
+        )
+    }
+
+    pub fn recast(self) -> TypedDataArray<dyn Any> {
+        match self {
+            TypedDataArray::WithFinalizer(x) => unsafe {TypedDataArray::new_external(x)},
+            TypedDataArray::WithoutFinalizer(x, _) => unsafe {TypedDataArray::new(x)}
+        }
+    }
+}
+
+impl<T: TypedData + Sized> Index<usize> for TypedDataArray<T> {
+    type Output = T;
+    fn index(&self, idx: usize) -> &T {
+        use TypedDataArray::*;
+        match self {
+            WithoutFinalizer(ffi::Dart_TypedData {length, values, ..}, _) |
+            WithFinalizer(ffi::Dart_ExternalTypedData {length, data: values, ..}) => {
+                unsafe {
+                    let slice = std::slice::from_raw_parts(*values as *mut T, *length as _);
+                    &slice[idx]
+                }
+            }
+        }
+    }
+}
+
+impl<T: TypedData + Sized> IndexMut<usize> for TypedDataArray<T> {
+    fn index_mut(&mut self, idx: usize) -> &mut T {
+        use TypedDataArray::*;
+        match self {
+            WithoutFinalizer(ffi::Dart_TypedData { length, values, .. }, _) |
+            WithFinalizer(ffi::Dart_ExternalTypedData { length, data: values, .. }) => {
+                unsafe {
+                    let slice = std::slice::from_raw_parts_mut(*values as *mut T, *length as _);
+                    &mut slice[idx]
+                }
+            }
+        }
+    }
+}

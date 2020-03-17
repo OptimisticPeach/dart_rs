@@ -597,11 +597,10 @@ impl UnverifiedDartHandle {
         ).get_error()
     }
 
-    pub fn new_external_type_data_with_drop<T: TypedData, V: Into<Box<[T]>>>(values: V) -> Result<Self, Error> {
+    pub fn new_external_typed_data_with_drop<T: TypedData, V: Into<Box<[T]>>>(values: V) -> Result<Self, Error> {
         let ptr = Box::leak(values.into());
         let len = ptr.len();
         let ptr_ptr = Box::leak(Box::new(ptr as *mut [T]));
-        let ptr_ptr_size = std::mem::size_of_val(ptr_ptr);
 
         unsafe extern "C" fn free<T>(_isolate_callback_data: *mut c_void, _handle: ffi::Dart_WeakPersistentHandle, peer: *mut c_void) {
             let ptr = peer as *mut *mut [T];
@@ -615,7 +614,7 @@ impl UnverifiedDartHandle {
                 ptr.as_mut_ptr() as *mut _,
                 len as isize,
                 ptr_ptr as *mut *mut [T] as *mut _,
-                ptr_ptr_size as isize,
+                (len * std::mem::size_of::<T>()) as _,
                 Some(
                     free::<T>
                 )
@@ -625,9 +624,9 @@ impl UnverifiedDartHandle {
     }
 
     pub fn new_of_type_self(&self, constructor_name: Option<Self>, args: &mut [Self]) -> Result<Self, Error> {
-// SAFETY:
-// Self is `repr(transparent)`, so we can
-// directly pointer cast to the array of handles.
+        // SAFETY:
+        // Self is `repr(transparent)`, so we can
+        // directly pointer cast to the array of handles.
         unsafe {
             Self::new(
                 ffi::Dart_New(
@@ -647,9 +646,9 @@ impl UnverifiedDartHandle {
     }
 
     pub fn invoke(&self, function_name: Self, args: &mut [Self]) -> Result<Self, Error> {
-// SAFETY:
-// Self is `repr(transparent)`, so we can
-// directly pointer cast to the array of handles.
+        // SAFETY:
+        // Self is `repr(transparent)`, so we can
+        // directly pointer cast to the array of handles.
         unsafe {
             Self::new(
                 ffi::Dart_Invoke(
@@ -663,9 +662,9 @@ impl UnverifiedDartHandle {
     }
 
     pub fn invoke_closure(&self, args: &mut [Self]) -> Result<Self, Error> {
-// SAFETY:
-// Self is `repr(transparent)`, so we can
-// directly pointer cast to the array of handles.
+        // SAFETY:
+        // Self is `repr(transparent)`, so we can
+        // directly pointer cast to the array of handles.
         unsafe {
             Self::new(
                 ffi::Dart_InvokeClosure(
@@ -1184,7 +1183,7 @@ pub struct NativePort {
 }
 
 impl NativePort {
-    pub unsafe fn new_native(name: CString, handler: extern "C" fn(dest_port_id: ffi::Dart_Port, message: *mut ffi::Dart_CObject)) -> Option<Self> {
+    pub unsafe fn new_native(name: CString, handler: unsafe extern "C" fn(dest_port_id: ffi::Dart_Port, message: *mut ffi::Dart_CObject)) -> Option<Self> {
         let port = ffi::Dart_NewNativePort(
             name.as_ptr(),
             Some(handler),
@@ -1209,7 +1208,7 @@ impl NativePort {
     }
 }
 
-pub trait TypedData {
+pub trait TypedData: 'static + Copy + Clone + Debug {
     const TYPE: ffi::Dart_TypedData_Type;
 }
 

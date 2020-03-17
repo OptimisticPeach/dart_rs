@@ -4,6 +4,8 @@ use std::ops::{Deref, RangeBounds, Mul, Add};
 use super::integer::Integer;
 use crate::dart_types::DartType;
 use std::thread::LocalKey;
+use crate::dart_types::list::{ListLike, List};
+use crate::dart_types::boolean::Boolean;
 
 #[derive(Clone, Copy)]
 pub struct DString {
@@ -75,13 +77,15 @@ impl DString {
         Self::from_handle(dart_unwrap!(result)).ok().unwrap()
     }
 
-    pub fn from_char_codes(_codes: impl DartHandle) -> Self {
-        unimplemented!()
+    pub fn from_char_codes(codes: impl ListLike<Integer> + DartHandle) -> Self {
+        let result = StringType.with(|x| {
+            x.new_of_type_self(Some(UnverifiedDartHandle::string_from_str("fromCharCodes")), &mut [codes.safe_handle()])
+        });
+        Self::from_handle(dart_unwrap!(result)).ok().unwrap()
     }
 
     pub fn from_environment(name: &Self, default: Option<&Self>) -> Self {
         let default = default.map(|x| x.handle).unwrap_or_else(UnverifiedDartHandle::null);
-
 
         let result = StringType.with(|x| {
             x.new_of_type_self(Some(UnverifiedDartHandle::string_from_str("fromEnvironment")), &mut [**name, default])
@@ -90,8 +94,9 @@ impl DString {
 
     }
 
-    pub fn code_units(&self) {
-        unimplemented!()
+    pub fn code_units(&self) -> List<Integer> {
+        let handle = self.handle.invoke(UnverifiedDartHandle::string_from_str("codeUnits"), &mut []);
+        List::from_handle(dart_unwrap!(handle)).ok().unwrap()
     }
 
     pub fn hash_code(&self) -> Integer {
@@ -100,16 +105,14 @@ impl DString {
         ).ok().unwrap()
     }
 
-    pub fn is_empty(&self) {
-        loop {
-            unimplemented!()
-        }
+    pub fn is_empty(&self) -> Boolean {
+        let handle = self.handle.invoke(UnverifiedDartHandle::string_from_str("isEmpty"), &mut []);
+        Boolean::from_handle(dart_unwrap!(handle)).ok().unwrap()
     }
 
-    pub fn is_not_empty(&self) {
-        loop {
-            unimplemented!()
-        }
+    pub fn is_not_empty(&self) -> Boolean {
+        let handle = self.handle.invoke(UnverifiedDartHandle::string_from_str("isNotEmpty"), &mut []);
+        Boolean::from_handle(dart_unwrap!(handle)).ok().unwrap()
     }
 
     pub fn len(&self) -> usize {
@@ -150,16 +153,27 @@ impl DString {
         Integer::from_handle(dart_unwrap!(handle)).ok().unwrap()
     }
 
-    pub fn contains(&self, _pattern: impl DartHandle, _start_index: Option<Integer>) {
-        loop {
-            unimplemented!()
-        }
+    pub fn contains(&self, string: Self, start_index: Option<Integer>) -> Boolean {
+        let start_index = start_index.map(|x| x.safe_handle()).unwrap_or_else(UnverifiedDartHandle::null);
+        let handle = self
+            .handle
+            .invoke(UnverifiedDartHandle::string_from_str("contains"), &mut [*string, start_index]);
+        Boolean::from_handle(dart_unwrap!(handle)).ok().unwrap()
     }
 
-    pub fn ends_with(&self, _other: Self) {
-        loop {
-            unimplemented!()
-        }
+    pub fn ends_with(&self, other: Self) -> Boolean {
+        let handle = self
+            .handle
+            .invoke(UnverifiedDartHandle::string_from_str("endsWith"), &mut [*other]);
+        Boolean::from_handle(dart_unwrap!(handle)).ok().unwrap()
+    }
+
+
+    pub fn starts_with(&self, other: Self) -> Boolean {
+        let handle = self
+            .handle
+            .invoke(UnverifiedDartHandle::string_from_str("startsWith"), &mut [*other]);
+        Boolean::from_handle(dart_unwrap!(handle)).ok().unwrap()
     }
 
     pub fn index_of(&self, pattern: impl DartHandle, start: Option<Integer>) -> Result<Integer, Error> {
@@ -235,11 +249,6 @@ impl DString {
             .map(|x| Self::from_handle(x).ok().unwrap())
     }
 
-    //Not going to be supported yet.
-    pub fn replace_all_mapped(&self, _from: impl DartHandle, _replace: impl DartHandle) {
-        unimplemented!()
-    }
-
     pub fn replace_first(&self, from: impl DartHandle, to: Self, start_index: Option<Integer>) -> Result<Self, Error> {
         self
             .handle
@@ -252,11 +261,6 @@ impl DString {
                 ]
             )
             .map(|x| Self::from_handle(x).ok().unwrap())
-    }
-
-    //Not going to be supported yet.
-    pub fn replace_first_mapped(&self, _from: impl DartHandle, _replace: impl DartHandle, _start_index: Option<Integer>) {
-        unimplemented!()
     }
 
     pub fn replace_range(&self, range: impl RangeBounds<Integer>, replacement: Self) -> Result<Self, Error> {
@@ -284,17 +288,11 @@ impl DString {
             )
     }
 
-    pub fn split(&self, _pattern: impl DartHandle) {
-        unimplemented!()
-    }
-
-    //Not going to be supported yet.
-    pub fn split_map_join(&self, _pattern: impl DartHandle, _on_match: impl DartHandle, _on_non_match: impl DartHandle) {
-        unimplemented!()
-    }
-
-    pub fn starts_with(&self, _pattern: impl DartHandle) {
-        unimplemented!()
+    pub fn split(&self, pattern: Self) -> List<Self> {
+        let handle = self
+            .handle
+            .invoke(UnverifiedDartHandle::string_from_str("split"), &mut [*pattern]);
+        List::from_handle(dart_unwrap!(handle)).ok().unwrap()
     }
 
     pub fn substring(&self, range: impl RangeBounds<Integer>) -> Result<Self, Error> {

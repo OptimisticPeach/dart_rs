@@ -1,11 +1,13 @@
 use std::marker::PhantomData;
-use crate::dart_handle::{UnverifiedDartHandle, DartHandle, Error};
+use crate::dart_handle::{UnverifiedDartHandle, DartHandle, Error, TypedData};
 use crate::dart_types::DartType;
 use std::thread::LocalKey;
 use std::ops::{RangeBounds, Deref, Index, IndexMut};
 use std::cell::UnsafeCell;
 use crate::dart_unwrap;
 use crate::dart_types::integer::Integer;
+use crate::dart_types::double::Double;
+use dart_sys as ffi;
 
 #[derive(Copy, Clone)]
 pub struct List<T> {
@@ -25,11 +27,32 @@ impl<T: DartType> List<T> {
 
 impl List<UnverifiedDartHandle> {
     pub fn new_dynamic(length: usize) -> Self {
-        let handle = UnverifiedDartHandle::new_list(length);
+        let handle = UnverifiedDartHandle::new_list_of(length, ffi::Dart_CoreType_Id::Dynamic);
         Self {
             handle: dart_unwrap!(handle),
             _phantom: PhantomData
         }
+    }
+}
+
+impl<T: TypedData> List<T> {
+    pub fn new_data(data: Box<[T]>) -> Self {
+        let handle = UnverifiedDartHandle::new_external_typed_data_with_drop(data);
+        Self::from_handle(dart_unwrap!(handle)).ok().unwrap()
+    }
+}
+
+impl List<Integer> {
+    pub fn new_integer(len: usize) -> Self {
+        let handle = UnverifiedDartHandle::new_list_of(len, ffi::Dart_CoreType_Id::Int);
+        Self::from_handle(dart_unwrap!(handle)).ok().unwrap()
+    }
+}
+
+impl List<String> {
+    pub fn new_integer(len: usize) -> Self {
+        let handle = UnverifiedDartHandle::new_list_of(len, ffi::Dart_CoreType_Id::Int);
+        Self::from_handle(dart_unwrap!(handle)).ok().unwrap()
     }
 }
 
@@ -101,34 +124,6 @@ impl<T: DartType> DartType for List<T> {
     };
 }
 
-impl<T: DartHandle> ListLike<T> for List<T> {
-    fn get_first(&self) -> T {
-        let handle = self.handle.invoke(UnverifiedDartHandle::string_from_str("first"), &mut []);
-        let handle = dart_unwrap!(handle);
-        T::from_handle(handle).ok().unwrap()
-    }
-
-    fn get_last(&self) -> T {
-        let handle = self.handle.invoke(UnverifiedDartHandle::string_from_str("last"), &mut []);
-        let handle = dart_unwrap!(handle);
-        T::from_handle(handle).ok().unwrap()
-    }
-
-    fn set_at(&mut self, idx: usize, item: T) {
-        let handle = self.handle.op_idx_assign(*Integer::from(idx), item.safe_handle());
-        dart_unwrap!(handle)
-    }
-    fn get_at(&self, idx: usize) -> T {
-        let handle = self.handle.op_idx(*Integer::from(idx));
-        let handle = dart_unwrap!(handle);
-        T::from_handle(handle).ok().unwrap()
-    }
-
-    fn len(&self) -> usize {
-        self.length()
-    }
-}
-
 pub trait ListLike<T> {
     fn get_first(&self) -> T;
     fn get_last(&self) -> T;
@@ -170,6 +165,62 @@ pub trait ListLike<T> {
     }
 
     fn len(&self) -> usize;
+}
+
+impl<T: DartType> ListLike<T> for List<T> {
+    fn get_first(&self) -> T {
+        let handle = self.handle.invoke(UnverifiedDartHandle::string_from_str("first"), &mut []);
+        let handle = dart_unwrap!(handle);
+        T::from_handle(handle).ok().unwrap()
+    }
+
+    fn get_last(&self) -> T {
+        let handle = self.handle.invoke(UnverifiedDartHandle::string_from_str("last"), &mut []);
+        let handle = dart_unwrap!(handle);
+        T::from_handle(handle).ok().unwrap()
+    }
+
+    fn set_at(&mut self, idx: usize, item: T) {
+        let handle = self.handle.op_idx_assign(*Integer::from(idx), item.safe_handle());
+        dart_unwrap!(handle)
+    }
+    fn get_at(&self, idx: usize) -> T {
+        let handle = self.handle.op_idx(*Integer::from(idx));
+        let handle = dart_unwrap!(handle);
+        T::from_handle(handle).ok().unwrap()
+    }
+
+    fn len(&self) -> usize {
+        self.length()
+    }
+}
+
+impl ListLike<UnverifiedDartHandle> for List<UnverifiedDartHandle> {
+    fn get_first(&self) -> UnverifiedDartHandle {
+        let handle = self.handle.invoke(UnverifiedDartHandle::string_from_str("first"), &mut []);
+        let handle = dart_unwrap!(handle);
+        handle
+    }
+
+    fn get_last(&self) -> UnverifiedDartHandle {
+        let handle = self.handle.invoke(UnverifiedDartHandle::string_from_str("last"), &mut []);
+        let handle = dart_unwrap!(handle);
+        handle
+    }
+
+    fn set_at(&mut self, idx: usize, item: UnverifiedDartHandle) {
+        let handle = self.handle.op_idx_assign(*Integer::from(idx), item.safe_handle());
+        dart_unwrap!(handle)
+    }
+    fn get_at(&self, idx: usize) -> UnverifiedDartHandle {
+        let handle = self.handle.op_idx(*Integer::from(idx));
+        let handle = dart_unwrap!(handle);
+        handle
+    }
+
+    fn len(&self) -> usize {
+        self.length()
+    }
 }
 
 pub struct ListView<'a, T, L: ListLike<T> + ?Sized = List<T>> {
@@ -340,3 +391,50 @@ impl<'a, T: Clone, L: ListLike<T> + ?Sized> Drop for ListViewMut<'a, T, L> {
         }
     }
 }
+
+macro_rules! typed_data_impl {
+    ($($this:ty, $out:ty),*) => {
+        $(
+            impl ListLike<$out> for List<$this> {
+                fn get_first(&self) -> $out {
+                    let handle = self.handle.invoke(UnverifiedDartHandle::string_from_str("first"), &mut []);
+                    let handle = dart_unwrap!(handle);
+                    <$out>::from_handle(handle).ok().unwrap()
+                }
+
+                fn get_last(&self) -> $out {
+                    let handle = self.handle.invoke(UnverifiedDartHandle::string_from_str("last"), &mut []);
+                    let handle = dart_unwrap!(handle);
+                    <$out>::from_handle(handle).ok().unwrap()
+                }
+
+                fn set_at(&mut self, idx: usize, item: $out) {
+                    let handle = self.handle.op_idx_assign(*Integer::from(idx), item.safe_handle());
+                    dart_unwrap!(handle)
+                }
+                fn get_at(&self, idx: usize) -> $out {
+                    let handle = self.handle.op_idx(*Integer::from(idx));
+                    let handle = dart_unwrap!(handle);
+                    <$out>::from_handle(handle).ok().unwrap()
+                }
+
+                fn len(&self) -> usize {
+                    self.length()
+                }
+            }
+        )*
+    }
+}
+
+typed_data_impl!(
+    u8, Integer,
+    i8, Integer,
+    u16, Integer,
+    i16, Integer,
+    u32, Integer,
+    i32, Integer,
+    u64, Integer,
+    i64, Integer,
+    f32, Double,
+    f64, Double
+);

@@ -33,7 +33,17 @@ impl Double {
 }
 
 mod impls {
-    use crate::impl_from;
+    macro_rules! impl_from {
+        ($new_ty:ty, ($this:ty), $($t:ty),*) => {
+            $(
+                impl From<$t> for $this {
+                    fn from(value: $t) -> Self {
+                        Self::new(value as $new_ty)
+                    }
+                }
+            )*
+        }
+    }
     use super::Double;
     use std::ops::{
         Add, AddAssign,
@@ -319,7 +329,7 @@ unsafe impl DartHandle for Double {
         self.handle
     }
     fn from_handle(handle: UnverifiedDartHandle) -> Result<Self, UnverifiedDartHandle> {
-        if handle.is_integer() {
+        if handle.is_double() {
             Ok(Self {
                 handle,
                 value: Cell::new(None)
