@@ -1,18 +1,18 @@
-use std::marker::PhantomData;
-use crate::dart_handle::{UnverifiedDartHandle, DartHandle, Error, TypedData};
-use crate::dart_types::DartType;
-use std::thread::LocalKey;
-use std::ops::{RangeBounds, Deref, Index, IndexMut};
-use std::cell::UnsafeCell;
-use crate::dart_unwrap;
-use crate::dart_types::integer::Integer;
+use crate::dart_handle::{DartHandle, Error, TypedData, UnverifiedDartHandle};
 use crate::dart_types::double::Double;
+use crate::dart_types::integer::Integer;
+use crate::dart_types::DartType;
+use crate::dart_unwrap;
 use dart_sys as ffi;
+use std::cell::UnsafeCell;
+use std::marker::PhantomData;
+use std::ops::{Deref, Index, IndexMut, RangeBounds};
+use std::thread::LocalKey;
 
 #[derive(Copy, Clone)]
 pub struct List<T> {
     _phantom: PhantomData<*mut T>,
-    handle: UnverifiedDartHandle
+    handle: UnverifiedDartHandle,
 }
 
 impl<T: DartType> List<T> {
@@ -20,7 +20,7 @@ impl<T: DartType> List<T> {
         let handle = T::THIS.with(|x| x.new_list_of_self_as_type(length));
         Self {
             handle: dart_unwrap!(handle),
-            _phantom: PhantomData
+            _phantom: PhantomData,
         }
     }
 }
@@ -30,7 +30,7 @@ impl List<UnverifiedDartHandle> {
         let handle = UnverifiedDartHandle::new_list_of(length, ffi::Dart_CoreType_Id::Dynamic);
         Self {
             handle: dart_unwrap!(handle),
-            _phantom: PhantomData
+            _phantom: PhantomData,
         }
     }
 }
@@ -62,23 +62,19 @@ impl<T> List<T> {
     }
 
     pub fn get_range(&self, range: impl std::ops::RangeBounds<usize>) -> Result<Self, Error> {
-        self
-            .handle
-            .list_get_range(range)
-            .map(
-                |handle| Self { handle, _phantom: PhantomData }
-            )
+        self.handle.list_get_range(range).map(|handle| Self {
+            handle,
+            _phantom: PhantomData,
+        })
     }
 
     pub fn iterator(&self) -> Result<UnverifiedDartHandle, Error> {
-        self
-            .handle
+        self.handle
             .invoke(UnverifiedDartHandle::string_from_str("iterator"), &mut [])
     }
 
     pub fn reversed(&self) -> Result<UnverifiedDartHandle, Error> {
-        self
-            .handle
+        self.handle
             .invoke(UnverifiedDartHandle::string_from_str("reversed"), &mut [])
     }
 }
@@ -92,12 +88,10 @@ unsafe impl<T: 'static> DartHandle for List<T> {
     }
     fn from_handle(handle: UnverifiedDartHandle) -> Result<Self, UnverifiedDartHandle> {
         if handle.is_list() {
-            Ok(
-                Self {
-                    handle,
-                    _phantom: PhantomData
-                }
-            )
+            Ok(Self {
+                handle,
+                _phantom: PhantomData,
+            })
         } else {
             Err(handle)
         }
@@ -136,29 +130,32 @@ pub trait ListLike<T> {
         let start = match start {
             std::ops::Bound::Unbounded => 0,
             std::ops::Bound::Included(x) => *x,
-            std::ops::Bound::Excluded(x) => *x + 1
+            std::ops::Bound::Excluded(x) => *x + 1,
         };
         let end = slice.end_bound();
         let end = match end {
             std::ops::Bound::Unbounded => self.len() - 1,
             std::ops::Bound::Included(x) => *x,
-            std::ops::Bound::Excluded(x) => *x - 1
+            std::ops::Bound::Excluded(x) => *x - 1,
         };
         let len = end - start;
         ListView::new(start, len, self)
     }
-    fn slice_mut<Q: RangeBounds<usize>>(&mut self, slice: Q) -> ListViewMut<'_, T, Self> where T: Clone {
+    fn slice_mut<Q: RangeBounds<usize>>(&mut self, slice: Q) -> ListViewMut<'_, T, Self>
+    where
+        T: Clone,
+    {
         let start = slice.start_bound();
         let start = match start {
             std::ops::Bound::Unbounded => 0,
             std::ops::Bound::Included(x) => *x,
-            std::ops::Bound::Excluded(x) => *x + 1
+            std::ops::Bound::Excluded(x) => *x + 1,
         };
         let end = slice.end_bound();
         let end = match end {
             std::ops::Bound::Unbounded => self.len() - 1,
             std::ops::Bound::Included(x) => *x,
-            std::ops::Bound::Excluded(x) => *x - 1
+            std::ops::Bound::Excluded(x) => *x - 1,
         };
         let len = end - start;
         ListViewMut::new(start, len, self)
@@ -169,19 +166,25 @@ pub trait ListLike<T> {
 
 impl<T: DartType> ListLike<T> for List<T> {
     fn get_first(&self) -> T {
-        let handle = self.handle.invoke(UnverifiedDartHandle::string_from_str("first"), &mut []);
+        let handle = self
+            .handle
+            .invoke(UnverifiedDartHandle::string_from_str("first"), &mut []);
         let handle = dart_unwrap!(handle);
         T::from_handle(handle).ok().unwrap()
     }
 
     fn get_last(&self) -> T {
-        let handle = self.handle.invoke(UnverifiedDartHandle::string_from_str("last"), &mut []);
+        let handle = self
+            .handle
+            .invoke(UnverifiedDartHandle::string_from_str("last"), &mut []);
         let handle = dart_unwrap!(handle);
         T::from_handle(handle).ok().unwrap()
     }
 
     fn set_at(&mut self, idx: usize, item: T) {
-        let handle = self.handle.op_idx_assign(*Integer::from(idx), item.safe_handle());
+        let handle = self
+            .handle
+            .op_idx_assign(*Integer::from(idx), item.safe_handle());
         dart_unwrap!(handle)
     }
     fn get_at(&self, idx: usize) -> T {
@@ -197,19 +200,25 @@ impl<T: DartType> ListLike<T> for List<T> {
 
 impl ListLike<UnverifiedDartHandle> for List<UnverifiedDartHandle> {
     fn get_first(&self) -> UnverifiedDartHandle {
-        let handle = self.handle.invoke(UnverifiedDartHandle::string_from_str("first"), &mut []);
+        let handle = self
+            .handle
+            .invoke(UnverifiedDartHandle::string_from_str("first"), &mut []);
         let handle = dart_unwrap!(handle);
         handle
     }
 
     fn get_last(&self) -> UnverifiedDartHandle {
-        let handle = self.handle.invoke(UnverifiedDartHandle::string_from_str("last"), &mut []);
+        let handle = self
+            .handle
+            .invoke(UnverifiedDartHandle::string_from_str("last"), &mut []);
         let handle = dart_unwrap!(handle);
         handle
     }
 
     fn set_at(&mut self, idx: usize, item: UnverifiedDartHandle) {
-        let handle = self.handle.op_idx_assign(*Integer::from(idx), item.safe_handle());
+        let handle = self
+            .handle
+            .op_idx_assign(*Integer::from(idx), item.safe_handle());
         dart_unwrap!(handle)
     }
     fn get_at(&self, idx: usize) -> UnverifiedDartHandle {
@@ -226,7 +235,7 @@ impl ListLike<UnverifiedDartHandle> for List<UnverifiedDartHandle> {
 pub struct ListView<'a, T, L: ListLike<T> + ?Sized = List<T>> {
     list: &'a L,
     cached_items: Vec<UnsafeCell<Option<T>>>,
-    start: usize
+    start: usize,
 }
 
 impl<'a, T, L: ListLike<T> + ?Sized> ListView<'a, T, L> {
@@ -270,7 +279,7 @@ impl<T> Item<T> {
     fn get_ref(&self) -> Option<&T> {
         match self {
             Item::Read(x) | Item::PossiblyModified(x) => Some(x),
-            Item::None => None
+            Item::None => None,
         }
     }
     fn make_mut(&mut self) -> Option<&mut T> {
@@ -287,9 +296,9 @@ impl<T> Item<T> {
                 } else {
                     unsafe { std::hint::unreachable_unchecked() }
                 }
-            },
+            }
             Item::PossiblyModified(x) => Some(x),
-            Item::None => None
+            Item::None => None,
         }
     }
     fn is_none(&self) -> bool {
@@ -304,7 +313,7 @@ impl<T> Item<T> {
 pub struct ListViewMut<'a, T: Clone, L: ListLike<T> + ?Sized = List<T>> {
     list: &'a mut L,
     cached_items: Vec<UnsafeCell<Item<T>>>,
-    start: usize
+    start: usize,
 }
 
 impl<'a, T: Clone, L: ListLike<T> + ?Sized> ListLike<T> for ListViewMut<'a, T, L> {
@@ -384,8 +393,8 @@ impl<'a, T: Clone, L: ListLike<T> + ?Sized> Drop for ListViewMut<'a, T, L> {
             unsafe {
                 let item = &*i;
                 match item {
-                    Item::None | Item::Read(_) => {},
-                    Item::PossiblyModified(x) => self.list.set_at(idx + self.start, x.clone())
+                    Item::None | Item::Read(_) => {}
+                    Item::PossiblyModified(x) => self.list.set_at(idx + self.start, x.clone()),
                 }
             }
         }
@@ -427,14 +436,6 @@ macro_rules! typed_data_impl {
 }
 
 typed_data_impl!(
-    u8, Integer,
-    i8, Integer,
-    u16, Integer,
-    i16, Integer,
-    u32, Integer,
-    i32, Integer,
-    u64, Integer,
-    i64, Integer,
-    f32, Double,
-    f64, Double
+    u8, Integer, i8, Integer, u16, Integer, i16, Integer, u32, Integer, i32, Integer, u64, Integer,
+    i64, Integer, f32, Double, f64, Double
 );

@@ -1,15 +1,21 @@
-use crate::dart_handle::{UnverifiedDartHandle, DartHandle, Error};
+use crate::dart_handle::{DartHandle, Error, UnverifiedDartHandle};
 use crate::dart_types::d_string::DString;
 use crate::dart_unwrap;
 
 #[derive(Copy, Clone)]
 pub struct Dynamic {
-    handle: UnverifiedDartHandle
+    handle: UnverifiedDartHandle,
 }
 
 impl Dynamic {
-    pub fn call_function(&self, function: DString, parameters: &mut [UnverifiedDartHandle]) -> Result<Dynamic, Error> {
-        self.handle.invoke(function.safe_handle(), parameters).map(Self::from)
+    pub fn call_function(
+        &self,
+        function: DString,
+        parameters: &mut [UnverifiedDartHandle],
+    ) -> Result<Dynamic, Error> {
+        self.handle
+            .invoke(function.safe_handle(), parameters)
+            .map(Self::from)
     }
     pub fn get_field(&self, field: DString) -> Result<Dynamic, Error> {
         self.handle.get_field(field.safe_handle()).map(Self::from)
@@ -20,22 +26,31 @@ impl Dynamic {
     pub fn get_property(&self, property: DString) -> Result<Dynamic, Error> {
         self.call_function(property, &mut [])
     }
-    pub fn set_property(&self, property: DString, value: UnverifiedDartHandle) -> Result<(), Error> {
+    pub fn set_property(
+        &self,
+        property: DString,
+        value: UnverifiedDartHandle,
+    ) -> Result<(), Error> {
         self.call_function(property, &mut [value]).map(drop)
     }
     pub fn get_type(&self) -> Dynamic {
-        dart_unwrap!(self.handle.get_instance_type().map(DartHandle::from_handle)).ok().unwrap()
+        dart_unwrap!(self.handle.get_instance_type().map(DartHandle::from_handle))
+            .ok()
+            .unwrap()
     }
     pub fn type_name(&self) -> String {
         let ty = self.get_type();
         ty.to_string()
     }
-    pub fn call_as_function(&self, parameters: &mut [UnverifiedDartHandle]) -> Result<Dynamic, Error> {
+    pub fn call_as_function(
+        &self,
+        parameters: &mut [UnverifiedDartHandle],
+    ) -> Result<Dynamic, Error> {
         self.handle.invoke_closure(parameters).map(Self::from)
     }
     pub fn from<T: DartHandle>(x: T) -> Self {
         Self {
-            handle: x.safe_handle()
+            handle: x.safe_handle(),
         }
     }
 }
@@ -76,18 +91,9 @@ mod impls {
     use super::Dynamic;
     use crate::dart_unwrap;
     use std::ops::{
-        Add, AddAssign,
-        Sub, SubAssign,
-        Mul, MulAssign,
-        Div, DivAssign,
-        Rem, RemAssign,
-        Shl, ShlAssign,
-        Shr, ShrAssign,
-        BitOr, BitOrAssign,
-        BitAnd, BitAndAssign,
-        BitXor, BitXorAssign,
-
-        Not, Neg,
+        Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Div,
+        DivAssign, Mul, MulAssign, Neg, Not, Rem, RemAssign, Shl, ShlAssign, Shr, ShrAssign, Sub,
+        SubAssign,
     };
 
     macro_rules! impl_dynamic_ops {
@@ -133,16 +139,56 @@ mod impls {
     }
 
     impl_dynamic_ops!(
-        Add, AddAssign, add, add_assign, op_add,
-        Sub, SubAssign, sub, sub_assign, op_sub,
-        Mul, MulAssign, mul, mul_assign, op_mul,
-        Div, DivAssign, div, div_assign, op_div,
-        Rem, RemAssign, rem, rem_assign, op_rem,
-        Shl, ShlAssign, shl, shl_assign, op_shl,
-        Shr, ShrAssign, shr, shr_assign, op_shr,
-        BitOr, BitOrAssign, bitor, bitor_assign, op_bitor,
-        BitXor, BitXorAssign, bitxor, bitxor_assign, op_bitxor,
-        BitAnd, BitAndAssign, bitand, bitand_assign, op_bitand
+        Add,
+        AddAssign,
+        add,
+        add_assign,
+        op_add,
+        Sub,
+        SubAssign,
+        sub,
+        sub_assign,
+        op_sub,
+        Mul,
+        MulAssign,
+        mul,
+        mul_assign,
+        op_mul,
+        Div,
+        DivAssign,
+        div,
+        div_assign,
+        op_div,
+        Rem,
+        RemAssign,
+        rem,
+        rem_assign,
+        op_rem,
+        Shl,
+        ShlAssign,
+        shl,
+        shl_assign,
+        op_shl,
+        Shr,
+        ShrAssign,
+        shr,
+        shr_assign,
+        op_shr,
+        BitOr,
+        BitOrAssign,
+        bitor,
+        bitor_assign,
+        op_bitor,
+        BitXor,
+        BitXorAssign,
+        bitxor,
+        bitxor_assign,
+        op_bitxor,
+        BitAnd,
+        BitAndAssign,
+        bitand,
+        bitand_assign,
+        op_bitand
     );
 
     impl Not for Dynamic {

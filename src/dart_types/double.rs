@@ -1,8 +1,8 @@
-use crate::dart_handle::{UnverifiedDartHandle, DartHandle};
-use std::cell::Cell;
-use crate::dart_unwrap;
-use std::ops::Deref;
+use crate::dart_handle::{DartHandle, UnverifiedDartHandle};
 use crate::dart_types::DartType;
+use crate::dart_unwrap;
+use std::cell::Cell;
+use std::ops::Deref;
 use std::thread::LocalKey;
 
 #[derive(Clone, Debug)]
@@ -16,7 +16,7 @@ impl Double {
         let handle = UnverifiedDartHandle::new_f64(value);
         Self {
             handle,
-            value: Cell::new(Some(value))
+            value: Cell::new(Some(value)),
         }
     }
 
@@ -46,12 +46,7 @@ mod impls {
     }
     use super::Double;
     use std::ops::{
-        Add, AddAssign,
-        Sub, SubAssign,
-        Mul, MulAssign,
-        Div, DivAssign,
-        Rem, RemAssign,
-        Neg
+        Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, RemAssign, Sub, SubAssign,
     };
 
     impl PartialEq<Self> for Double {
@@ -283,22 +278,25 @@ mod impls {
         }
     }
 
-    impl_ref_ops!(Double,
-        Add, add,
-        Sub, sub,
-        Mul, mul,
-        Div, div,
-        Rem, rem
-    );
+    impl_ref_ops!(Double, Add, add, Sub, sub, Mul, mul, Div, div, Rem, rem);
 
-    impl_from!(f64, (Double),
-        u8, i8,
-        u16, i16,
-        u32, i32,
-        u64, i64,
-        u128, i128,
-        usize, isize,
-        f32, f64
+    impl_from!(
+        f64,
+        (Double),
+        u8,
+        i8,
+        u16,
+        i16,
+        u32,
+        i32,
+        u64,
+        i64,
+        u128,
+        i128,
+        usize,
+        isize,
+        f32,
+        f64
     );
 }
 
@@ -332,7 +330,7 @@ unsafe impl DartHandle for Double {
         if handle.is_double() {
             Ok(Self {
                 handle,
-                value: Cell::new(None)
+                value: Cell::new(None),
             })
         } else {
             Err(handle)

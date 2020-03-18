@@ -1,8 +1,8 @@
-use crate::dart_handle::{UnverifiedDartHandle, DartHandle};
-use std::cell::Cell;
-use crate::dart_unwrap;
-use std::ops::Deref;
+use crate::dart_handle::{DartHandle, UnverifiedDartHandle};
 use crate::dart_types::DartType;
+use crate::dart_unwrap;
+use std::cell::Cell;
+use std::ops::Deref;
 use std::thread::LocalKey;
 
 #[derive(Clone, Debug)]
@@ -16,7 +16,7 @@ impl Boolean {
         let handle = UnverifiedDartHandle::new_bool(value);
         Self {
             handle,
-            value: Cell::new(Some(value))
+            value: Cell::new(Some(value)),
         }
     }
 
@@ -75,7 +75,7 @@ unsafe impl DartHandle for Boolean {
         if handle.is_boolean() {
             Ok(Self {
                 handle,
-                value: Cell::new(None)
+                value: Cell::new(None),
             })
         } else {
             Err(handle)

@@ -2,10 +2,10 @@
 
 use dart::{create_init_function, export_dart_functions};
 
-use dart::dart_handle::Port;
 use dart::dart_cobject::{CObject, TypedDataArray};
-use rand::{Rng, SeedableRng};
+use dart::dart_handle::Port;
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
 fn random_array(message: CObject, _port: Port) {
     if let CObject::Array(data) = message {
@@ -16,7 +16,9 @@ fn random_array(message: CObject, _port: Port) {
                 .collect::<Vec<u8>>();
             unsafe {
                 let port = Port::from_port(port.0.id).unwrap();
-                if port.post_cobject(&mut CObject::TypedData(TypedDataArray::create(v).recast()).into_leak()) {
+                if port.post_cobject(
+                    &mut CObject::TypedData(TypedDataArray::create(v).recast()).into_leak(),
+                ) {
                     port.post_cobject(&mut CObject::Null.into_leak());
                 }
             }

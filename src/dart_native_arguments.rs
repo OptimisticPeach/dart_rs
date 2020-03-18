@@ -1,13 +1,13 @@
-use dart_sys as ffi;
-use crate::dart_handle::{UnverifiedDartHandle, DartHandle};
 use crate::dart_handle::Error;
-use std::mem::MaybeUninit;
-use std::ffi::CStr;
+use crate::dart_handle::{DartHandle, UnverifiedDartHandle};
 use crate::dart_types::d_string::DString;
+use dart_sys as ffi;
+use std::ffi::CStr;
+use std::mem::MaybeUninit;
 
 #[repr(transparent)]
 pub struct NativeArguments {
-    args: ffi::Dart_NativeArguments
+    args: ffi::Dart_NativeArguments,
 }
 
 impl NativeArguments {
@@ -15,7 +15,15 @@ impl NativeArguments {
         Self { args }
     }
 
-    pub fn get_native_arguments(&self) -> Result<(Vec<ffi::Dart_NativeArgument_Descriptor>, Vec<ffi::Dart_NativeArgument_Value>), Error> {
+    pub fn get_native_arguments(
+        &self,
+    ) -> Result<
+        (
+            Vec<ffi::Dart_NativeArgument_Descriptor>,
+            Vec<ffi::Dart_NativeArgument_Value>,
+        ),
+        Error,
+    > {
         let len = self.get_native_argument_count();
         let mut types = Vec::with_capacity(len);
         let mut values = Vec::with_capacity(len);
@@ -32,7 +40,7 @@ impl NativeArguments {
                     types.set_len(len);
                     values.set_len(len);
                     Ok((types, values))
-                },
+                }
                 Err(e) => {
                     std::mem::forget(types);
                     std::mem::forget(values);
@@ -43,15 +51,11 @@ impl NativeArguments {
     }
 
     pub fn get_native_argument_count(&self) -> usize {
-        unsafe {
-            ffi::Dart_GetNativeArgumentCount(self.args) as _
-        }
+        unsafe { ffi::Dart_GetNativeArgumentCount(self.args) as _ }
     }
 
     pub fn get_native_argument(&self, idx: usize) -> UnverifiedDartHandle {
-        unsafe {
-            UnverifiedDartHandle::new(ffi::Dart_GetNativeArgument(self.args, idx as _))
-        }
+        unsafe { UnverifiedDartHandle::new(ffi::Dart_GetNativeArgument(self.args, idx as _)) }
     }
 
     pub fn get_string_arg(&self, idx: usize) -> Result<String, Error> {
@@ -69,8 +73,8 @@ impl NativeArguments {
                         let string = cstring.into_string().unwrap();
                         Ok(string)
                     }
-                },
-                Err(e) => Err(e)
+                }
+                Err(e) => Err(e),
             }
         }
     }
@@ -79,7 +83,9 @@ impl NativeArguments {
         unsafe {
             let mut val = MaybeUninit::uninit();
             let handle = ffi::Dart_GetNativeBooleanArgument(self.args, idx as _, val.as_mut_ptr());
-            UnverifiedDartHandle::new(handle).get_error().map(|_| val.assume_init())
+            UnverifiedDartHandle::new(handle)
+                .get_error()
+                .map(|_| val.assume_init())
         }
     }
 
@@ -87,7 +93,9 @@ impl NativeArguments {
         unsafe {
             let mut val = MaybeUninit::uninit();
             let handle = ffi::Dart_GetNativeIntegerArgument(self.args, idx as _, val.as_mut_ptr());
-            UnverifiedDartHandle::new(handle).get_error().map(|_| val.assume_init())
+            UnverifiedDartHandle::new(handle)
+                .get_error()
+                .map(|_| val.assume_init())
         }
     }
 
@@ -95,14 +103,14 @@ impl NativeArguments {
         unsafe {
             let mut val = MaybeUninit::uninit();
             let handle = ffi::Dart_GetNativeDoubleArgument(self.args, idx as _, val.as_mut_ptr());
-            UnverifiedDartHandle::new(handle).get_error().map(|_| val.assume_init())
+            UnverifiedDartHandle::new(handle)
+                .get_error()
+                .map(|_| val.assume_init())
         }
     }
 
     pub fn set_return(&self, val: UnverifiedDartHandle) {
-        unsafe {
-            ffi::Dart_SetReturnValue(self.args, val.handle())
-        }
+        unsafe { ffi::Dart_SetReturnValue(self.args, val.handle()) }
     }
 
     pub fn set_bool_return(&self, val: bool) {
@@ -126,7 +134,7 @@ impl NativeArguments {
 
 pub struct NativeArgumentDescriptor {
     pub ty: ffi::Dart_NativeArgument_Type,
-    pub idx: u8
+    pub idx: u8,
 }
 
 #[derive(Clone)]
@@ -162,11 +170,15 @@ impl NativeArgumentValue {
                     Double => NativeArgumentValue::Double(val.as_double),
                     String => {
                         let string = val.as_string;
-                        let d_string = DString::from_handle(UnverifiedDartHandle::new(string.dart_str).get_error()?);
+                        let d_string = DString::from_handle(
+                            UnverifiedDartHandle::new(string.dart_str).get_error()?,
+                        );
                         let d_string = d_string.ok().unwrap();
                         NativeArgumentValue::String(d_string)
-                    },
-                    Instance => NativeArgumentValue::Instance(UnverifiedDartHandle::new(val.as_instance).get_error()?),
+                    }
+                    Instance => NativeArgumentValue::Instance(
+                        UnverifiedDartHandle::new(val.as_instance).get_error()?,
+                    ),
                     NativeFields => panic!("Native fields are not supported."),
                 }
             };

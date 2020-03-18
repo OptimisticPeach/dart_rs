@@ -1,8 +1,8 @@
-use crate::dart_handle::{UnverifiedDartHandle, DartHandle};
-use std::cell::Cell;
-use crate::dart_unwrap;
-use std::ops::Deref;
+use crate::dart_handle::{DartHandle, UnverifiedDartHandle};
 use crate::dart_types::DartType;
+use crate::dart_unwrap;
+use std::cell::Cell;
+use std::ops::Deref;
 use std::thread::LocalKey;
 
 #[derive(Clone, Debug)]
@@ -16,7 +16,7 @@ impl Integer {
         let handle = UnverifiedDartHandle::new_i64(value);
         Self {
             handle,
-            value: Cell::new(Some(value))
+            value: Cell::new(Some(value)),
         }
     }
 
@@ -32,7 +32,9 @@ impl Integer {
     }
 
     pub fn to_hex_string(&self) -> String {
-        dart_unwrap!(self.handle.get_integer_hex_string()).into_string().unwrap()
+        dart_unwrap!(self.handle.get_integer_hex_string())
+            .into_string()
+            .unwrap()
     }
 }
 
@@ -50,17 +52,9 @@ mod impls {
     }
     use super::Integer;
     use std::ops::{
-        Add, AddAssign,
-        Sub, SubAssign,
-        Mul, MulAssign,
-        Div, DivAssign,
-        Rem, RemAssign,
-        Neg, Not,
-        BitAnd, BitAndAssign,
-        BitOr, BitOrAssign,
-        BitXor, BitXorAssign,
-        Shl, ShlAssign,
-        Shr, ShrAssign,
+        Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Div,
+        DivAssign, Mul, MulAssign, Neg, Not, Rem, RemAssign, Shl, ShlAssign, Shr, ShrAssign, Sub,
+        SubAssign,
     };
 
     impl PartialEq<Self> for Integer {
@@ -455,27 +449,28 @@ mod impls {
         }
     }
 
-    impl_ref_ops!(Integer,
-        Add, add,
-        Sub, sub,
-        Mul, mul,
-        Div, div,
-        Rem, rem,
-        Shr, shr,
-        Shl, shl,
-        BitOr, bitor,
-        BitXor, bitxor,
-        BitAnd, bitand
+    impl_ref_ops!(
+        Integer, Add, add, Sub, sub, Mul, mul, Div, div, Rem, rem, Shr, shr, Shl, shl, BitOr,
+        bitor, BitXor, bitxor, BitAnd, bitand
     );
 
-    impl_from!(i64, (Integer),
-        u8, i8,
-        u16, i16,
-        u32, i32,
-        u64, i64,
-        u128, i128,
-        usize, isize,
-        f32, f64
+    impl_from!(
+        i64,
+        (Integer),
+        u8,
+        i8,
+        u16,
+        i16,
+        u32,
+        i32,
+        u64,
+        i64,
+        u128,
+        i128,
+        usize,
+        isize,
+        f32,
+        f64
     );
 }
 
@@ -509,7 +504,7 @@ unsafe impl DartHandle for Integer {
         if handle.is_integer() {
             Ok(Self {
                 handle,
-                value: Cell::new(None)
+                value: Cell::new(None),
             })
         } else {
             Err(handle)

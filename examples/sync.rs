@@ -1,18 +1,13 @@
 #![crate_type = "cdylib"]
 
-use dart::{create_init_function, export_dart_functions, dart_unwrap};
+use dart::{create_init_function, dart_unwrap, export_dart_functions};
 
+use dart::prelude::*;
 use rand::{
-    Rng,
-    RngCore,
-    SeedableRng,
-    rngs::{
-        StdRng,
-        OsRng,
-    },
+    rngs::{OsRng, StdRng},
+    Rng, RngCore, SeedableRng,
 };
 use std::sync::Mutex;
-use dart::prelude::*;
 
 lazy_static::lazy_static! {
     static ref RNG: Mutex<Option<Box<dyn RngCore + Send + Sync>>> = Mutex::new(None);

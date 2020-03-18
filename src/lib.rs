@@ -1,18 +1,15 @@
-use std::collections::HashMap;
-
-use std::sync::RwLock;
-
+use crate::dart_handle::{DartHandle, UnverifiedDartHandle};
 use dart_sys as ffi;
-
 use lazy_static::lazy_static;
+use std::collections::HashMap;
 use std::ffi::{CStr, CString};
-use crate::dart_handle::{UnverifiedDartHandle, DartHandle};
 use std::os::raw::c_char;
 use std::panic::{catch_unwind, UnwindSafe};
+use std::sync::RwLock;
 
+pub mod dart_cobject;
 pub mod dart_handle;
 pub mod dart_native_arguments;
-pub mod dart_cobject;
 pub mod dart_types;
 pub mod prelude;
 
@@ -35,7 +32,9 @@ impl FunctionRegister {
     pub fn add_function(&mut self, function: NativeFunction, name: &str) {
         let name = CString::new(name).unwrap();
         let name = unsafe {
-            CStr::from_bytes_with_nul_unchecked(&*Box::leak::<'static>(name.into_bytes_with_nul().into_boxed_slice()))
+            CStr::from_bytes_with_nul_unchecked(&*Box::leak::<'static>(
+                name.into_bytes_with_nul().into_boxed_slice(),
+            ))
         };
         self.functions.insert(name, function);
         self.function_names.insert(function, name);
@@ -46,8 +45,13 @@ impl FunctionRegister {
         self.functions.get(name).cloned()
     }
 
-    pub(crate) fn get_name_from_function(&self, function: ffi::Dart_NativeFunction) -> Option<&'static CStr> {
-        function.and_then(|x| self.function_names.get(&x)).map(|x| *x)
+    pub(crate) fn get_name_from_function(
+        &self,
+        function: ffi::Dart_NativeFunction,
+    ) -> Option<&'static CStr> {
+        function
+            .and_then(|x| self.function_names.get(&x))
+            .map(|x| *x)
     }
 }
 
@@ -72,12 +76,11 @@ pub unsafe fn init(parent_library: ffi::Dart_Handle, registers: &[Registerer]) -
     }
     drop(lock);
 
-    let result_code =
-        ffi::Dart_SetNativeResolver(
-            parent_library.handle(),
-            Some(resolve_name),
-            Some(resolve_function),
-        );
+    let result_code = ffi::Dart_SetNativeResolver(
+        parent_library.handle(),
+        Some(resolve_name),
+        Some(resolve_function),
+    );
 
     UnverifiedDartHandle::new(result_code)
         .get_error()
@@ -86,7 +89,11 @@ pub unsafe fn init(parent_library: ffi::Dart_Handle, registers: &[Registerer]) -
 }
 
 #[allow(dead_code)] //Usage of this function is declared in external crates.
-unsafe extern "C" fn resolve_name(name: ffi::Dart_Handle, _argc: std::os::raw::c_int, _auto_scope_setup: *mut bool) -> ffi::Dart_NativeFunction {
+unsafe extern "C" fn resolve_name(
+    name: ffi::Dart_Handle,
+    _argc: std::os::raw::c_int,
+    _auto_scope_setup: *mut bool,
+) -> ffi::Dart_NativeFunction {
     let name = UnverifiedDartHandle::new(name).get_error().ok()?;
 
     if !name.is_string() {
@@ -110,20 +117,21 @@ unsafe extern "C" fn resolve_function(function: ffi::Dart_NativeFunction) -> *co
 }
 
 #[doc(hidden)]
-pub fn catch_panic_hook(f: impl FnOnce(crate::dart_native_arguments::NativeArguments) + UnwindSafe, value: ffi::Dart_NativeArguments) {
-    let result = catch_unwind(
-        move || f(unsafe { crate::dart_native_arguments::NativeArguments::new(value) })
-    );
+pub fn catch_panic_hook(
+    f: impl FnOnce(crate::dart_native_arguments::NativeArguments) + UnwindSafe,
+    value: ffi::Dart_NativeArguments,
+) {
+    let result = catch_unwind(move || {
+        f(unsafe { crate::dart_native_arguments::NativeArguments::new(value) })
+    });
     if let Err(e) = result {
         let msg;
         match e.downcast_ref::<String>() {
             Some(x) => msg = &**x,
-            None => {
-                match e.downcast::<&str>() {
-                    Ok(x) => msg = *x,
-                    Err(_e) => msg = "Panic of unknown nature in Rust code!",
-                }
-            }
+            None => match e.downcast::<&str>() {
+                Ok(x) => msg = *x,
+                Err(_e) => msg = "Panic of unknown nature in Rust code!",
+            },
         }
 
         let error = crate::dart_handle::Error::new_api(msg).unwrap();
@@ -132,39 +140,48 @@ pub fn catch_panic_hook(f: impl FnOnce(crate::dart_native_arguments::NativeArgum
 }
 
 #[doc(hidden)]
-pub fn catch_panic_hook_async(f: unsafe extern "C" fn(dest_port_id: ::dart_sys::Dart_Port, message: *mut ::dart_sys::Dart_CObject), value: ffi::Dart_NativeArguments, name: &str) {
-    catch_panic_hook(|x| {
-        unsafe {crate::dart_handle::enter_scope()};
-        let name = CString::new(name).unwrap_or_else(
-            |e| {
-                unsafe {crate::dart_handle::exit_scope()};
-                panic!("Name is invalid: `{}`", e);
-            }
-        );
-        let service_port = unsafe {crate::dart_handle::NativePort::new_native(name.clone(), f)}.unwrap_or_else(
-            || {
+pub fn catch_panic_hook_async(
+    f: unsafe extern "C" fn(
+        dest_port_id: ::dart_sys::Dart_Port,
+        message: *mut ::dart_sys::Dart_CObject,
+    ),
+    value: ffi::Dart_NativeArguments,
+    name: &str,
+) {
+    catch_panic_hook(
+        |x| {
+            unsafe { crate::dart_handle::enter_scope() };
+            let name = CString::new(name).unwrap_or_else(|e| {
                 unsafe { crate::dart_handle::exit_scope() };
-                panic!("Name is invalid: `{:?}`", name);
-            }
-        );
-        let (_, send_port_instance) = unsafe {crate::dart_handle::Port::new(service_port.port())}.unwrap();
-        x.set_return(send_port_instance);
-        unsafe { crate::dart_handle::exit_scope() };
-    }, value);
+                panic!("Name is invalid: `{}`", e);
+            });
+            let service_port =
+                unsafe { crate::dart_handle::NativePort::new_native(name.clone(), f) }
+                    .unwrap_or_else(|| {
+                        unsafe { crate::dart_handle::exit_scope() };
+                        panic!("Name is invalid: `{:?}`", name);
+                    });
+            let (_, send_port_instance) =
+                unsafe { crate::dart_handle::Port::new(service_port.port()) }.unwrap();
+            x.set_return(send_port_instance);
+            unsafe { crate::dart_handle::exit_scope() };
+        },
+        value,
+    );
 }
 
 #[doc(hidden)]
-pub fn catch_async_panic(func: fn(crate::dart_cobject::CObject, crate::dart_handle::Port), port: ffi::Dart_Port, message: *mut ffi::Dart_CObject) {
-    let result = catch_unwind(
-        move || {
-            unsafe {
-                func(
-                    crate::dart_cobject::CObject::from(*message),
-                    crate::dart_handle::Port::from_port(port).unwrap()
-                )
-            }
-        }
-    );
+pub fn catch_async_panic(
+    func: fn(crate::dart_cobject::CObject, crate::dart_handle::Port),
+    port: ffi::Dart_Port,
+    message: *mut ffi::Dart_CObject,
+) {
+    let result = catch_unwind(move || unsafe {
+        func(
+            crate::dart_cobject::CObject::from(*message),
+            crate::dart_handle::Port::from_port(port).unwrap(),
+        )
+    });
     // We can ignore the error message since it will already have been printed.
     if result.is_err() {
         eprintln!("Rust panicked in an unwind-unsafe way. Aborting the process.");
@@ -243,5 +260,5 @@ macro_rules! dart_unwrap {
                 }
             }
         }
-    }
+    };
 }
