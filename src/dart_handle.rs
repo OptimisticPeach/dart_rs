@@ -763,6 +763,10 @@ impl UnverifiedDartHandle {
     }
 
     pub fn op_rem(&self, other: Self) -> Result<Self, Error> {
+        self.invoke(Self::string_from_str("%"), &mut [other])
+    }
+
+    pub fn op_flr_div(&self, other: Self) -> Result<Self, Error> {
         self.invoke(Self::string_from_str("~/"), &mut [other])
     }
 

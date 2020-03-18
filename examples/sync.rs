@@ -19,19 +19,16 @@ lazy_static::lazy_static! {
 }
 
 fn system_rand(arguments: NativeArguments) {
-    println!("Got here!");
     let mut rng_provider = RNG.lock().unwrap();
     let integer = if let Some(x) = &mut *rng_provider {
         x.gen::<i64>()
     } else {
-        println!("Got second if");
         let mut rng = Box::new(OsRng) as Box<dyn RngCore + Send + Sync>;
         let num = rng.gen::<i64>();
         let rng = Some(rng);
         *rng_provider = rng;
         num
     };
-    println!("Exiting with {}", integer);
     arguments.set_return(*Integer::new(integer));
 }
 
