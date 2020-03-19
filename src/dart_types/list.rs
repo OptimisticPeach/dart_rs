@@ -36,7 +36,7 @@ impl List<UnverifiedDartHandle> {
 }
 
 impl<T: TypedData> List<T> {
-    pub fn new_data(data: Box<[T]>) -> Self {
+    pub fn new_data(data: Vec<T>) -> Self {
         let handle = UnverifiedDartHandle::new_external_typed_data_with_drop(data);
         Self::from_handle(dart_unwrap!(handle)).ok().unwrap()
     }
@@ -122,8 +122,8 @@ pub trait ListLike<T> {
     fn get_first(&self) -> T;
     fn get_last(&self) -> T;
 
-    fn set_at(&mut self, idx: usize, item: T);
-    fn get_at(&self, idx: usize) -> T;
+    fn set_at(&mut self, idx: usize, item: T) -> Result<(), Error>;
+    fn get_at(&self, idx: usize) -> Result<T, Error>;
 
     fn slice<Q: RangeBounds<usize>>(&self, slice: Q) -> ListView<'_, T, Self> {
         let start = slice.start_bound();
@@ -181,16 +181,15 @@ impl<T: DartType> ListLike<T> for List<T> {
         T::from_handle(handle).ok().unwrap()
     }
 
-    fn set_at(&mut self, idx: usize, item: T) {
+    fn set_at(&mut self, idx: usize, item: T) -> Result<(), Error> {
         let handle = self
             .handle
             .op_idx_assign(*Integer::from(idx), item.safe_handle());
-        dart_unwrap!(handle)
+        handle
     }
-    fn get_at(&self, idx: usize) -> T {
+    fn get_at(&self, idx: usize) -> Result<T, Error> {
         let handle = self.handle.op_idx(*Integer::from(idx));
-        let handle = dart_unwrap!(handle);
-        T::from_handle(handle).ok().unwrap()
+        handle.map(|x| T::from_handle(x).ok().unwrap())
     }
 
     fn len(&self) -> usize {
@@ -215,15 +214,14 @@ impl ListLike<UnverifiedDartHandle> for List<UnverifiedDartHandle> {
         handle
     }
 
-    fn set_at(&mut self, idx: usize, item: UnverifiedDartHandle) {
+    fn set_at(&mut self, idx: usize, item: UnverifiedDartHandle) -> Result<(), Error> {
         let handle = self
             .handle
             .op_idx_assign(*Integer::from(idx), item.safe_handle());
-        dart_unwrap!(handle)
+        handle
     }
-    fn get_at(&self, idx: usize) -> UnverifiedDartHandle {
+    fn get_at(&self, idx: usize) -> Result<UnverifiedDartHandle, Error> {
         let handle = self.handle.op_idx(*Integer::from(idx));
-        let handle = dart_unwrap!(handle);
         handle
     }
 
@@ -262,7 +260,7 @@ impl<'a, T, L: ListLike<T> + ?Sized> Index<usize> for ListView<'a, T, L> {
             let item = &self.cached_items[idx];
             let item = item.get();
             if (*item).is_none() {
-                *item = Some(self.list.get_at(idx + self.start))
+                *item = Some(dart_unwrap!(self.list.get_at(idx + self.start)))
             }
             (*(item as *const Option<T>)).as_ref().unwrap()
         }
@@ -324,11 +322,11 @@ impl<'a, T: Clone, L: ListLike<T> + ?Sized> ListLike<T> for ListViewMut<'a, T, L
         self[self.len() - 1].clone()
     }
 
-    fn set_at(&mut self, idx: usize, item: T) {
-        self[idx] = item;
+    fn set_at(&mut self, idx: usize, item: T) -> Result<(), Error> {
+        self.list.set_at(idx, item)
     }
-    fn get_at(&self, idx: usize) -> T {
-        self[idx].clone()
+    fn get_at(&self, idx: usize) -> Result<T, Error> {
+        self.list.get_at(idx)
     }
 
     fn len(&self) -> usize {
@@ -359,7 +357,7 @@ impl<'a, T: Clone, L: ListLike<T> + ?Sized> Index<usize> for ListViewMut<'a, T, 
             let item = &self.cached_items[idx];
             let item = item.get();
             if (*item).is_none() {
-                *item = Item::Read(self.list.get_at(idx + self.start));
+                *item = Item::Read(dart_unwrap!(self.list.get_at(idx + self.start)));
             }
             (*(item as *const Item<T>)).get_ref().unwrap()
         }
@@ -379,7 +377,7 @@ impl<'a, T: Clone, L: ListLike<T> + ?Sized> IndexMut<usize> for ListViewMut<'a, 
             let item = &self.cached_items[idx];
             let item = item.get();
             if (*item).is_none() {
-                *item = Item::PossiblyModified(self.list.get_at(idx + self.start));
+                *item = Item::PossiblyModified(dart_unwrap!(self.list.get_at(idx + self.start)));
             }
             (*item).make_mut().unwrap()
         }
@@ -394,7 +392,7 @@ impl<'a, T: Clone, L: ListLike<T> + ?Sized> Drop for ListViewMut<'a, T, L> {
                 let item = &*i;
                 match item {
                     Item::None | Item::Read(_) => {}
-                    Item::PossiblyModified(x) => self.list.set_at(idx + self.start, x.clone()),
+                    Item::PossiblyModified(x) => dart_unwrap!(self.list.set_at(idx + self.start, x.clone())),
                 }
             }
         }
@@ -417,14 +415,13 @@ macro_rules! typed_data_impl {
                     <$out>::from_handle(handle).ok().unwrap()
                 }
 
-                fn set_at(&mut self, idx: usize, item: $out) {
+                fn set_at(&mut self, idx: usize, item: $out) -> Result<(), Error> {
                     let handle = self.handle.op_idx_assign(*Integer::from(idx), item.safe_handle());
-                    dart_unwrap!(handle)
+                    handle
                 }
-                fn get_at(&self, idx: usize) -> $out {
+                fn get_at(&self, idx: usize) -> Result<$out, Error> {
                     let handle = self.handle.op_idx(*Integer::from(idx));
-                    let handle = dart_unwrap!(handle);
-                    <$out>::from_handle(handle).ok().unwrap()
+                    handle.map(|x| <$out>::from_handle(x).ok().unwrap())
                 }
 
                 fn len(&self) -> usize {

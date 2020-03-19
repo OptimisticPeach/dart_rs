@@ -1100,7 +1100,12 @@ impl Port {
     pub fn post<T: DartHandle>(&self, handle: T) -> bool {
         unsafe { ffi::Dart_Post(self.port, handle.handle()) }
     }
-    pub unsafe fn post_cobject(&self, obj: &mut Dart_CObject) -> bool {
+    pub fn post_cobject(&self, obj: crate::dart_cobject::CObject) -> bool {
+        unsafe {
+            self.post_raw_cobject(&mut obj.into_leak())
+        }
+    }
+    pub unsafe fn post_raw_cobject(&self, obj: &mut Dart_CObject) -> bool {
         ffi::Dart_PostCObject(self.port, obj)
     }
     pub fn post_integer(&self, num: i64) -> bool {

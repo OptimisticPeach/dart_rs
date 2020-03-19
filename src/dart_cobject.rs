@@ -207,7 +207,7 @@ impl<'a> CObjectLock<'a> {
         unsafe {
             let port = Port::from_port(sender.0.id);
             if let Some(port) = port {
-                port.post_cobject(&mut self.object)
+                port.post_raw_cobject(&mut self.object)
             } else {
                 false
             }

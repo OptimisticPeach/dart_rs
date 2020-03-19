@@ -17,9 +17,9 @@ fn random_array(message: CObject, _port: Port) {
             unsafe {
                 let port = Port::from_port(port.0.id).unwrap();
                 if port.post_cobject(
-                    &mut CObject::TypedData(TypedDataArray::create(v).recast()).into_leak(),
+                    CObject::TypedData(TypedDataArray::create(v).recast()),
                 ) {
-                    port.post_cobject(&mut CObject::Null.into_leak());
+                    port.post_cobject(CObject::Null);
                 }
             }
         } else {
