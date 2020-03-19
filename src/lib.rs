@@ -72,8 +72,7 @@ impl FunctionRegister {
     /// Gets a function given a name.
     ///
     /// # SAFETY:
-    ///  `name` must be a valid pointer to a nul-terminated ascii-style
-    ///  C-string.
+    ///  `name` must be a valid pointer to a nul-terminated C-string.
     ///
     pub unsafe fn get_function(&self, name: *const c_char) -> ffi::Dart_NativeFunction {
         let name = CStr::from_ptr::<'static>(name);
@@ -123,9 +122,8 @@ pub struct Registerer {
 ///
 /// # Safety
 ///
-/// I am still unclear on whether calling this with a garbage `parent_library`
-/// is UB (https://github.com/dart-lang/sdk/issues/41101), so I am marking
-/// this as `unsafe`.
+/// `parent_library` must be a valid `Dart_Handle`. Not doing so will cause
+/// the VM to invoke UB.
 ///
 #[doc(hidden)]
 pub unsafe fn init(parent_library: ffi::Dart_Handle, registers: &[Registerer]) -> ffi::Dart_Handle {
@@ -167,9 +165,7 @@ pub unsafe fn init(parent_library: ffi::Dart_Handle, registers: &[Registerer]) -
 ///
 /// # Safety
 ///
-/// Since I still don't know whether a garbage `Dart_Handle` is safe to use
-/// with the VM or not, I am being conservative and marking that as a reason
-/// for this being unsafe.
+/// `name` Must be a valid dart handle. Not doing so will incur the VM to invoke UB.
 ///
 /// Also, `auto_scope_setup` must be a valid pointer. The data underneath it
 /// does not need to be a valid `bool` since its destructor is not run and
@@ -227,8 +223,7 @@ extern "C" fn resolve_function(function: ffi::Dart_NativeFunction) -> *const u8 
 /// # Safety
 ///
 /// This function requires `value` to be a valid pointer to function
-/// arguments. If not, then I am unsure what will happen since it is
-/// unclear to me what the VM does (Invoke UB or error out).
+/// arguments.
 ///
 #[doc(hidden)]
 pub unsafe fn catch_panic_hook(
