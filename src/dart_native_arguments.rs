@@ -5,16 +5,36 @@ use dart_sys as ffi;
 use std::ffi::CStr;
 use std::mem::MaybeUninit;
 
+///
+/// Native arguments passed to a standard dart native extension
+/// function.
+///
+/// Manages arguments going in, and also return values going out.
+///
 #[repr(transparent)]
 pub struct NativeArguments {
     args: ffi::Dart_NativeArguments,
 }
 
 impl NativeArguments {
+    ///
+    /// Creates a new `NativeArguments` from a value given by
+    /// the VM.
+    ///
+    /// # Safety
+    ///
+    /// `args` must be a pointer to a valid instance of `Dart_NativeArguments`.
+    /// Not doing so will cause UB as the VM tries to dereference the pointer.
+    ///
     pub unsafe fn new(args: ffi::Dart_NativeArguments) -> Self {
         Self { args }
     }
 
+    ///
+    /// Extracts the native arguments of the function call. This will return
+    /// both the type and value of each argument. The two returned `Vec`s should
+    /// theoretically have the same length.
+    ///
     pub fn get_native_arguments(
         &self,
     ) -> Result<
@@ -50,14 +70,26 @@ impl NativeArguments {
         }
     }
 
+    ///
+    /// Acquires the number of arguments in the `NativeArguments`.
+    ///
     pub fn get_native_argument_count(&self) -> usize {
         unsafe { ffi::Dart_GetNativeArgumentCount(self.args) as _ }
     }
 
+    ///
+    /// Acquires a single argument by instance in the `NativeArguments`.
+    /// This may be an error handle. It is your job to reassure that it
+    /// isn't by calling `.get_error()`.
+    ///
     pub fn get_native_argument(&self, idx: usize) -> UnverifiedDartHandle {
         unsafe { UnverifiedDartHandle::new(ffi::Dart_GetNativeArgument(self.args, idx as _)) }
     }
 
+    ///
+    /// Attempts to retrieve a string from the argument list, returning
+    /// an error should it not be a string.
+    ///
     pub fn get_string_arg(&self, idx: usize) -> Result<String, Error> {
         unsafe {
             let mut peer = MaybeUninit::uninit();
@@ -79,6 +111,10 @@ impl NativeArguments {
         }
     }
 
+    ///
+    /// Attempts to retrieve a boolean from the argument list, returning
+    /// an error should it not be a boolean.
+    ///
     pub fn get_bool_arg(&self, idx: usize) -> Result<bool, Error> {
         unsafe {
             let mut val = MaybeUninit::uninit();
@@ -89,6 +125,10 @@ impl NativeArguments {
         }
     }
 
+    ///
+    /// Attempts to get a 64 bit signed integer from the argument list,
+    /// returning an error should it not be an integer.
+    ///
     pub fn get_i64_arg(&self, idx: usize) -> Result<i64, Error> {
         unsafe {
             let mut val = MaybeUninit::uninit();
@@ -99,6 +139,10 @@ impl NativeArguments {
         }
     }
 
+    ///
+    /// Attempts to get a 64 bit floating point value from the argument
+    /// list, returning an error should it not be an `f64`.
+    ///
     pub fn get_f64_arg(&self, idx: usize) -> Result<f64, Error> {
         unsafe {
             let mut val = MaybeUninit::uninit();
@@ -109,22 +153,39 @@ impl NativeArguments {
         }
     }
 
+    ///
+    /// Sets an instance as the return value. This (and associated
+    /// `set_*_return` functions) will be what is received on the
+    /// dart end after calling the function.
+    ///
     pub fn set_return(&self, val: UnverifiedDartHandle) {
         unsafe { ffi::Dart_SetReturnValue(self.args, val.handle()) }
     }
 
+    ///
+    /// Sets a boolean return value. See [`set_return`](NativeArguments::set_return)
+    /// for more information.
+    ///
     pub fn set_bool_return(&self, val: bool) {
         unsafe {
             ffi::Dart_SetBooleanReturnValue(self.args, val);
         }
     }
 
+    ///
+    /// Sets an integer return value. See [`set_return`](NativeArguments::set_return)
+    /// for more information.
+    ///
     pub fn set_i64_return(&self, val: i64) {
         unsafe {
             ffi::Dart_SetIntegerReturnValue(self.args, val);
         }
     }
 
+    ///
+    /// Sets a floating point return value. See
+    /// [`set_return`](NativeArguments::set_return) for more information.
+    ///
     pub fn set_f64_return(&self, val: f64) {
         unsafe {
             ffi::Dart_SetDoubleReturnValue(self.args, val);
@@ -132,11 +193,13 @@ impl NativeArguments {
     }
 }
 
-pub struct NativeArgumentDescriptor {
-    pub ty: ffi::Dart_NativeArgument_Type,
-    pub idx: u8,
-}
-
+///
+/// A generic native argument value. This is the idiomatic
+/// rust equivalent of the ffi bindings produced by
+/// [`NativeArguments::get_native_arguments`] and can be created
+/// by calling [`NativeArgumentValue::get_args`] to seamlessly
+/// convert from [NativeArguments] to a `Vec<NativeArgumentValue>`.
+///
 #[derive(Clone)]
 #[non_exhaustive]
 pub enum NativeArgumentValue {
@@ -148,11 +211,24 @@ pub enum NativeArgumentValue {
     Int64(i64),
     UInt64(u64),
     Double(f64),
+    ///
+    /// An instance of a String. This happens to be handled differently
+    /// by the `NativeArguments` interface, so it is exposed differently.
+    ///
     String(DString),
+    ///
+    /// A generic instance of a value. This may or may not be an error
+    /// handle, and therefore it is an [`UnverifiedDartHandle`](crate::prelude::UnverifiedDartHandle)
+    /// instead of a [`Dynamic`](crate::prelude::Dynamic).
+    ///
     Instance(UnverifiedDartHandle),
 }
 
 impl NativeArgumentValue {
+    ///
+    /// Gets idiomatic arguments out of a [`NativeArguments`], returning
+    /// an error prematurely should it ever occur.
+    ///
     pub fn get_args(args: NativeArguments) -> Result<Vec<Self>, Error> {
         let (descriptors, values) = args.get_native_arguments()?;
         assert_eq!(descriptors.len(), values.len());
