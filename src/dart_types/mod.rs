@@ -3,6 +3,14 @@
 //! functionality to the equivalent types in Dart, while
 //! trying to be idiomatic in Rust.
 //!
+//! # Note
+//! Documentation will be lacking in these types since
+//! they very closely match the dart semantics.
+//!
+//! If you would like me to document one of them more
+//! closely, please open an issue on this crate's github
+//! page.
+//!
 
 use crate::dart_handle::{DartHandle, UnverifiedDartHandle};
 use std::thread::LocalKey;
