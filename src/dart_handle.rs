@@ -264,7 +264,7 @@ impl UnverifiedDartHandle {
     ///
     /// Is `self` an instance of an object?
     ///
-    /// See [`Dart_IsInstance`](::dart_sys::DartIsInstance) for more information.
+    /// See [`Dart_IsInstance`](::dart_sys::Dart_IsInstance) for more information.
     ///
     pub fn is_instance(&self) -> bool {
         unsafe { ffi::Dart_IsInstance(self.handle) }
@@ -624,8 +624,8 @@ impl UnverifiedDartHandle {
     /// - String
     /// - Int
     ///
-    /// See [`Dart_NewListOf`](::dart_sys::DartNewListOf) and
-    /// [`Dart_CoreType_Id`](::dart_sys::Dart_CoreType_ID) for more information.
+    /// See [`Dart_NewListOf`](::dart_sys::Dart_NewListOf) and
+    /// [`Dart_CoreType_Id`](::dart_sys::Dart_CoreType_Id) for more information.
     ///
     pub fn new_list_of(length: usize, ty: ffi::Dart_CoreType_Id) -> Result<Self, Error> {
         unsafe { Self::new(ffi::Dart_NewListOf(ty, length as _)).get_error() }
