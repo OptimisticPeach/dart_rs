@@ -1,3 +1,21 @@
+//!
+//! Basic safe wrapper of a [`Dart_Handle`](::dart_sys::Dart_Handle),
+//! management of error handles, and message handling. This module
+//! aims to provide a filter between what is safe and what is unsafe.
+//!
+//! It will try to expose a safe api for the most part to put users
+//! to rest on the safety of their calls. Invariants must be upheld
+//! though, and as such the creation of a `UnverifiedDartHandle` has
+//! safety restrictions.
+//!
+//! This module also tries to speak in generic terms of
+//! `UnverifiedDartHandle`s and avoids the usage of the smart wrapper
+//! types in the [`dart_types`](crate::dart_types) module. This is
+//! done because of inheritance not being modeled by dart handles,
+//! and the possibility of providing another type instead of the one
+//! originally intended.
+//!
+
 use dart_sys as ffi;
 use dart_sys::Dart_CObject;
 use std::convert::{Infallible, TryInto};
@@ -7,12 +25,79 @@ use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::os::raw::{c_char, c_void};
 
+///
+/// Describes a smart wrapper around a dart handle. This is
+/// effectively a "Has a `Dart_Handle`" trait.
+///
+/// # Safety
+/// When implementing this trait:
+///
+/// - It is assumed that calls to [`handle`](DartHandle::handle),
+/// [`safe_handle`](DartHandle::safe_handle), and
+/// [`from_handle`](DartHandle::from_handle) will not modify the
+/// handles being used in any way, shape or form.
+/// - It is assumed that calls to any of the functions with the same parameters
+/// will always return the same value.
+/// - It is assumed that this object does not take care of disposal of the
+/// handle, and instead leaves that up to the VM to take care of.
+///
 pub unsafe trait DartHandle: 'static + Sized {
+    ///
+    /// Gets the raw handle from a smart wrapper.
+    ///
     fn handle(&self) -> ffi::Dart_Handle;
+    ///
+    /// Gets the smart handle from a smart wrapper.
+    ///
     fn safe_handle(&self) -> UnverifiedDartHandle;
+    ///
+    /// Creates a smart wrapper from a smart handle.
+    ///
+    /// It is assumed that when calling this function with a smart
+    /// handle, it will return an `Err` with the handle should it
+    /// not be the correct handle type.
+    ///
     fn from_handle(handle: UnverifiedDartHandle) -> Result<Self, UnverifiedDartHandle>;
 }
 
+///
+/// A smart wrapper around a [`Dart_Handle`](::dart_sys::Dart_Handle).
+///
+/// # Safety
+/// - This does not dispose of handles upon being dropped.
+/// - This is [`Copy`] and [`Clone`] and therefore does not make
+/// any reassurances to how many places code could be touching
+/// the value since it is possible to construct it again from
+/// a clone of this value.
+/// - This is not `Send` nor `Sync` and therefore its use in this
+/// library makes the assumption that a `UnverifiedDartHandle` will
+/// never cause a data race on another thread, unless specifically
+/// coordinated by another thread using `unsafe`.
+/// - This does not keep track of dart scopes, and may be destroyed
+/// after the end of the current scope. This is also why the respective
+/// [`enter_scope`] and [`exit_scope`] functions are marked as `unsafe`,
+/// since they could easily invalidate `Dart_Handle`s. The existence of
+/// `UnverifiedDartHandle`s after the end of the function call is also
+/// prevented by the lack of a `Send` and `Sync` implementation, which
+/// makes it impossible to communicate handles between function entries,
+/// barring the use of `unsafe` with precise coordination to ensure that
+/// the handle is not invalidated.
+/// - Creating an `UnverifiedDartHandle` with garbage data is UB.
+/// This may cause the VM to try to dereference it and therefore invoke
+/// undefined behaviour and potentially crash the program in unexpected
+/// ways. Generally the only way to ensure that a handle is valid is to
+/// only use ones handed to you by the VM directly, and to never create
+/// one on your own.
+///
+/// # Note
+/// The documentation on these functions is sparse. The functions listed
+/// for this `struct` are direct safe wrappers around what is available
+/// under the extensions api in [`dart_sys`](::dart_sys).
+///
+/// I (The author of the crate) will try to document functions that may
+/// be unclear or ambiguous from the name, but will otherwise leave it
+/// to the reader's discretion to determine the use of each function.
+///
 #[derive(Copy, Clone)]
 #[repr(transparent)]
 pub struct UnverifiedDartHandle {
@@ -32,11 +117,28 @@ unsafe impl DartHandle for UnverifiedDartHandle {
 }
 
 impl UnverifiedDartHandle {
+    ///
+    /// Creates a new `UnverifiedDartHandle` from a raw
+    /// [`Dart_Handle`](::dart_sys::Dart_Handle).
+    ///
+    /// # Safety
+    /// Calling this function must ensure that all of the invariants
+    /// listed in the description for [`UnverifiedDartHandle`] are
+    /// upheld and that the contracts listed there are never violated.
+    ///
+    /// Breaking the contract defined above this function, in the
+    /// related function could cause the VM to invoke UB.
+    ///
     pub unsafe fn new(handle: ffi::Dart_Handle) -> Self {
         assert_ne!(handle, std::ptr::null_mut());
         Self { handle }
     }
 
+    ///
+    /// Checks if this handle is an [`Error`](Error) handle, returning
+    /// a smart wrapper around the error handle should it be one, or
+    /// returning itself should it not be an error.
+    ///
     pub fn get_error(self) -> Result<Self, Error> {
         unsafe {
             if ffi::Dart_IsError(self.handle) {
@@ -57,6 +159,11 @@ impl UnverifiedDartHandle {
         }
     }
 
+    ///
+    /// Calls [`Object.toString()`](https://api.dart.dev/stable/2.7.1/dart-core/Object/toString.html)
+    /// on an object and returns a [`CString`](std::ffi::CString) should it succeed, or
+    ///
+    ///
     pub fn to_string(&self) -> Result<CString, Error> {
         unsafe {
             let string_handle = ffi::Dart_ToString(self.handle);
@@ -70,35 +177,66 @@ impl UnverifiedDartHandle {
         }
     }
 
+    ///
+    /// Checks if two handles refer to the same object.
+    ///
+    /// This may call [`dart:core.identical`](https://api.dart.dev/stable/2.7.1/dart-core/identical.html),
+    /// and further reading is available at
+    /// [`Dart_IdentityEquals`](::dart_sys::Dart_IdentityEquals).
+    ///
     pub fn identity_eq(a: Self, b: Self) -> bool {
         unsafe { ffi::Dart_IdentityEquals(a.handle, b.handle) }
     }
 
-    pub fn handle_message() -> Result<Self, Error> {
-        unsafe {
-            let handle = ffi::Dart_HandleMessage();
-            Self::new(handle).get_error()
-        }
+    ///
+    /// See [`Dart_HandleMessage`](::dart_sys::Dart_HandleMessage).
+    ///
+    pub unsafe fn handle_message() -> Result<Self, Error> {
+        let handle = ffi::Dart_HandleMessage();
+        Self::new(handle).get_error()
     }
 
-    pub fn wait_for_event(timeout_millis: i64) -> Result<Self, Error> {
-        unsafe {
-            let handle = ffi::Dart_WaitForEvent(timeout_millis);
-            Self::new(handle).get_error()
-        }
+    ///
+    /// See [`Dart_WaitForEvent`](::dart_sys::Dart_WaitForEvent).
+    ///
+    pub unsafe fn wait_for_event(timeout_millis: i64) -> Result<Self, Error> {
+        let handle = ffi::Dart_WaitForEvent(timeout_millis);
+        Self::new(handle).get_error()
     }
 
+    ///
+    /// Returns a handle to the [`Null`](https://api.dart.dev/stable/2.7.1/dart-core/Null-class.html) object.
+    ///
+    /// See [`Dart_Null`](::dart_sys::Dart_Null) for more information.
+    ///
     pub fn null() -> Self {
         unsafe { Self::new(ffi::Dart_Null()) }
     }
+
+    ///
+    /// Checks if a handle is to the [`Null`](https://api.dart.dev/stable/2.7.1/dart-core/Null-class.html)
+    /// object.
+    ///
+    /// See [`Dart_IsNull`](::dart_sys::Dart_IsNull) for more information.
+    ///
     pub fn is_null(&self) -> bool {
         unsafe { ffi::Dart_IsNull(self.handle) }
     }
 
+    ///
+    /// Returns a handle to the empty string object.
+    ///
+    /// See [`Dart_EmptyString`](::dart_sys::Dart_EmptyString) for more information.
+    ///
     pub fn empty_string() -> Self {
         unsafe { Self::new(ffi::Dart_EmptyString()) }
     }
 
+    ///
+    /// Checks equality. Not too sure what this does different from `identical`.
+    ///
+    /// See [`Dart_ObjectEquals`](::dart_sys::Dart_ObjectEquals) for more information.
+    ///
     pub fn equals(&self, other: Self) -> Result<bool, Error> {
         unsafe {
             let mut result = MaybeUninit::uninit();
@@ -109,6 +247,11 @@ impl UnverifiedDartHandle {
         }
     }
 
+    ///
+    /// Is `self` instanceof ty? `ty` must be a [`Type`](https://api.dart.dev/stable/2.7.1/dart-core/Type-class.html).
+    ///
+    /// See [`Dart_ObjectIsType`](::dart_sys::Dart_ObjectIsType) for more information.
+    ///
     pub fn instanceof(&self, ty: Self) -> Result<bool, Error> {
         unsafe {
             let mut result = MaybeUninit::uninit();
@@ -118,6 +261,11 @@ impl UnverifiedDartHandle {
         }
     }
 
+    ///
+    /// Is `self` an instance of an object?
+    ///
+    /// See [`Dart_IsInstance`](::dart_sys::DartIsInstance) for more information.
+    ///
     pub fn is_instance(&self) -> bool {
         unsafe { ffi::Dart_IsInstance(self.handle) }
     }
@@ -170,6 +318,14 @@ impl UnverifiedDartHandle {
         unsafe { ffi::Dart_IsVariable(self.handle) }
     }
 
+    ///
+    /// Is `self` the type variable in a generic function or type?
+    ///
+    /// ```ignore
+    /// void Foo<T>() {}
+    ///          ^-- Type variable
+    /// ```
+    ///
     pub fn is_type_variable(&self) -> bool {
         unsafe { ffi::Dart_IsTypeVariable(self.handle) }
     }
@@ -227,6 +383,16 @@ impl UnverifiedDartHandle {
         }
     }
 
+    ///
+    /// A tear off is when you create an implicit closure which calls
+    /// a single function on an object:
+    /// ```ignore
+    /// var someList = <String>[];
+    /// var anotherList = ['a', 'b', 'c'];
+    /// anotherList.forEach(someList.add); //Tearing off here gives me
+    ///                                    //a void Function(String).
+    /// ```
+    ///
     pub fn is_tear_off(&self) -> bool {
         unsafe { ffi::Dart_IsTearOff(self.handle) }
     }
@@ -316,6 +482,11 @@ impl UnverifiedDartHandle {
         }
     }
 
+    ///
+    /// Gets a top level method from a class.
+    ///
+    /// See [`Dart_GetStaticMethodClosure`](::dart_sys::Dart_GetStaticMethodClosure) for more information.
+    ///
     pub fn get_static_method_closure(
         library: Self,
         clazz: Self,
@@ -437,10 +608,25 @@ impl UnverifiedDartHandle {
         }
     }
 
+    ///
+    /// New list of dynamics.
+    ///
+    /// See [`Dart_NewList`](::dart_sys::Dart_NewList) for more information.
+    ///
     pub fn new_list(length: usize) -> Result<Self, Error> {
         unsafe { Self::new(ffi::Dart_NewList(length as _)).get_error() }
     }
 
+    ///
+    /// New list of one of the core types:
+    ///
+    /// - Dynamic
+    /// - String
+    /// - Int
+    ///
+    /// See [`Dart_NewListOf`](::dart_sys::DartNewListOf) and
+    /// [`Dart_CoreType_Id`](::dart_sys::Dart_CoreType_ID) for more information.
+    ///
     pub fn new_list_of(length: usize, ty: ffi::Dart_CoreType_Id) -> Result<Self, Error> {
         unsafe { Self::new(ffi::Dart_NewListOf(ty, length as _)).get_error() }
     }
@@ -588,6 +774,15 @@ impl UnverifiedDartHandle {
         unsafe { Self::new(ffi::Dart_Allocate(self.handle)).get_error() }
     }
 
+    ///
+    /// Invokes a method on `self`, where self may be a:
+    ///
+    /// - Instance: Invokes a member method.
+    /// - Class: Invokes a static method.
+    /// - Library: Invokes a static top level method.
+    ///
+    /// See [`Dart_Invoke`](::dart_sys::Dart_Invoke) for more information.
+    ///
     pub fn invoke(&self, function_name: Self, args: &mut [Self]) -> Result<Self, Error> {
         // SAFETY:
         // Self is `repr(transparent)`, so we can
@@ -617,6 +812,12 @@ impl UnverifiedDartHandle {
         }
     }
 
+    ///
+    /// Invokes the constructor on a type, using the default
+    /// constructor if `name` is `None`.
+    ///
+    /// See [`Dart_InvokeConstructor`](::dart_sys::Dart_InvokeConstructor) for more information.
+    ///
     pub fn invoke_self_constructor(
         &self,
         name: Option<Self>,
@@ -647,6 +848,14 @@ impl UnverifiedDartHandle {
         }
     }
 
+    ///
+    /// Constructs a type instance which is located within
+    /// `library`, is called `class` and has the type parameters
+    /// `type_args`.
+    ///
+    /// Example: `library`: `dart:core`, `class_name`: `List`, `type_args`: `String`
+    /// would give a `List<String>`.
+    ///
     pub fn make_type_from_decl(
         library: Self,
         class_name: Self,
@@ -679,6 +888,30 @@ impl UnverifiedDartHandle {
         unsafe { Self::new(ffi::Dart_GetLoadedLibraries()).get_error() }
     }
 
+    ///
+    /// Invokes an operator for an instance. These methods are shorthand
+    /// instead of directly using invoke. These methods will just use the
+    /// operator as the name of the method (`+` for add, `-` for sub, etc.).
+    ///
+    /// - `op_add`: Addition (`+`).
+    /// - `op_sub`: Subtraction (`-`).
+    /// - `op_mul`: Multiplication (`*`).
+    /// - `op_div`: Double Division (`/`).
+    /// - `op_rem`: Remainder Division (`%`).
+    /// - `op_flr_div`: Integer Division (`~/`).
+    /// - `op_neg`: Unary Negation (`-`, `unary-`).
+    /// - `op_eq`: Test for overloadable equality (`==`).
+    /// - `op_gt`, `op_gte`, `op_lt`, `op_lte`: Comparison
+    /// (`>`, `>=`, `<`, `<=`).
+    /// - `op_bitand`: Binary `and`-ing (`&`).
+    /// - `op_bitor`: Binary `or`-ing (`|`).
+    /// - `op_bitxor`: Binary `xor`-ing (`^`).
+    /// - `op_bit_not`: Binary `not`-ing (`~`).
+    /// - `op_shl`: Binary left shift bits (`<<`).
+    /// - `op_shr`: Binary right shift bits (`>>`).
+    /// - `op_idx`: Indexing (`[]`).
+    /// - `op_idx_assign`: Assignment to index (`[]=`).
+    ///
     pub fn op_add(&self, other: Self) -> Result<Self, Error> {
         self.invoke(Self::string_from_str("+"), &mut [other])
     }
@@ -873,57 +1106,18 @@ mod impl_ops_unverified_dart_handle {
         }
     }
 
+    #[rustfmt::skip]
     impl_ops_unverified_dart_handle!(
-        Add,
-        add,
-        AddAssign,
-        add_assign,
-        op_add,
-        Sub,
-        sub,
-        SubAssign,
-        sub_assign,
-        op_sub,
-        Mul,
-        mul,
-        MulAssign,
-        mul_assign,
-        op_mul,
-        Div,
-        div,
-        DivAssign,
-        div_assign,
-        op_div,
-        Rem,
-        rem,
-        RemAssign,
-        rem_assign,
-        op_rem,
-        BitAnd,
-        bitand,
-        BitAndAssign,
-        bitand_assign,
-        op_bitand,
-        BitOr,
-        bitor,
-        BitOrAssign,
-        bitor_assign,
-        op_bitor,
-        BitXor,
-        bitxor,
-        BitXorAssign,
-        bitxor_assign,
-        op_bitxor,
-        Shl,
-        shl,
-        ShlAssign,
-        shl_assign,
-        op_shl,
-        Shr,
-        shr,
-        ShrAssign,
-        shr_assign,
-        op_shr,
+        Add,    add,    AddAssign,      add_assign,     op_add,
+        Sub,    sub,    SubAssign,      sub_assign,     op_sub,
+        Mul,    mul,    MulAssign,      mul_assign,     op_mul,
+        Div,    div,    DivAssign,      div_assign,     op_div,
+        Rem,    rem,    RemAssign,      rem_assign,     op_rem,
+        BitAnd, bitand, BitAndAssign,   bitand_assign,  op_bitand,
+        BitOr,  bitor,  BitOrAssign,    bitor_assign,   op_bitor,
+        BitXor, bitxor, BitXorAssign,   bitxor_assign,  op_bitxor,
+        Shl,    shl,    ShlAssign,      shl_assign,     op_shl,
+        Shr,    shr,    ShrAssign,      shr_assign,     op_shr,
     );
 }
 
@@ -935,6 +1129,12 @@ pub fn version_string() -> CString {
     }
 }
 
+///
+/// An error which may be any of [`ErrorKind`](crate::dart_handle::ErrorKind).
+///
+/// See [`Dart_Handle`](::dart_sys::Dart_Handle)'s documentation for more information
+/// about error handles.
+///
 pub struct Error {
     handle: UnverifiedDartHandle,
     kind: ErrorKind,

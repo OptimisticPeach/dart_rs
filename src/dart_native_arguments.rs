@@ -218,8 +218,8 @@ pub enum NativeArgumentValue {
     String(DString),
     ///
     /// A generic instance of a value. This may or may not be an error
-    /// handle, and therefore it is an [`UnverifiedDartHandle`](crate::prelude::UnverifiedDartHandle)
-    /// instead of a [`Dynamic`](crate::prelude::Dynamic).
+    /// handle, and therefore it is an [`UnverifiedDartHandle`](crate::dart_handle::UnverifiedDartHandle)
+    /// instead of a [`Dynamic`](crate::dart_types::dynamic::Dynamic).
     ///
     Instance(UnverifiedDartHandle),
 }
